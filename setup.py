@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from aiohttp import (
     ClientResponseError,
     ClientSession,
@@ -41,7 +42,7 @@ class Interlink:
         {Fore.GREEN + Style.BRIGHT}Auto Setup {Fore.BLUE + Style.BRIGHT}Interlink - BOT
             """
             f"""
-        {Fore.GREEN + Style.BRIGHT}Rey? {Fore.YELLOW + Style.BRIGHT}<INI WATERMARK>
+        {Fore.GREEN + Style.BRIGHT}Version {Fore.YELLOW + Style.BRIGHT}1.0.0
             """
         )
 
@@ -55,7 +56,7 @@ class Interlink:
         try:
             if not os.path.exists(filename):
                 self.log(f"{Fore.RED}File {filename} Not Found.{Style.RESET_ALL}")
-                return
+                return []
 
             with open(filename, 'r') as file:
                 data = json.load(file)
@@ -85,6 +86,7 @@ class Interlink:
                 json.dump(updated_accounts, file, indent=4)
 
         except Exception as e:
+            self.log(f"Error saving tokens: {str(e)}")
             return []
     
     async def load_proxies(self, use_proxy_choice: int):
@@ -163,92 +165,139 @@ class Interlink:
             except ValueError:
                 print(f"{Fore.RED + Style.BRIGHT}Invalid input. Enter a number (1, 2 or 3).{Style.RESET_ALL}")
     
-    async def send_otp(self, email: str, proxy=None, retries=5):
+    async def send_otp(self, email: str, login_id: str, passcode: str, proxy=None, retries=5):
         url = f"{self.BASE_API}/send-otp-email-verify-login"
-        data = json.dumps({"loginId":int(self.interlink_id[email]), "passcode":int(self.passcode[email]), "email":email})
+        
+        data = {
+            "loginId": str(login_id),  # 确保是字符串
+            "passcode": str(passcode),  # 确保是字符串
+            "email": email,
+            "authType": "google"  # 始终包含此字段
+        }
+        
+        json_data = json.dumps(data)
+        
         headers = {
             **self.headers,
-            "Content-Length": str(len(data)),
+            "Content-Length": str(len(json_data)),
             "Content-Type": "application/json"
         }
+        
         for attempt in range(retries):
             connector = ProxyConnector.from_url(proxy) if proxy else None
             try:
                 async with ClientSession(connector=connector, timeout=ClientTimeout(total=60)) as session:
-                    async with session.post(url=url, headers=headers, data=data, ssl=False) as response:
+                    async with session.post(
+                        url=url, 
+                        headers=headers, 
+                        data=json_data,
+                        ssl=False
+                    ) as response:
+                        response_text = await response.text()
+                        self.log(f"Response: {response.status} - {response_text}")
                         response.raise_for_status()
                         return await response.json()
-            except (Exception, ClientResponseError) as e:
+            except Exception as e:
+                self.log(f"Attempt {attempt + 1} failed: {str(e)}")
                 if attempt < retries - 1:
                     await asyncio.sleep(5)
                     continue
-                self.log(
-                    f"{Fore.CYAN+Style.BRIGHT}Message:{Style.RESET_ALL}"
-                    f"{Fore.RED+Style.BRIGHT} Request OTP Failed {Style.RESET_ALL}"
-                    f"{Fore.MAGENTA+Style.BRIGHT}-{Style.RESET_ALL}"
-                    f"{Fore.YELLOW+Style.BRIGHT} {str(e)} {Style.RESET_ALL}"
-                )
-
-        return None
+                raise
             
-    async def verify_otp(self, email: str, otp_code: str, proxy=None, retries=5):
+    async def verify_otp(self, email: str, otp_code: str, login_id: str, proxy=None, retries=5):
         url = f"{self.BASE_API}/check-otp-email-verify-login"
-        data = json.dumps({"loginId":int(self.interlink_id[email]), "otp":int(otp_code)})
+        data = {
+            "loginId": str(login_id),
+            "otp": str(otp_code),
+            "email": email
+        }
+        json_data = json.dumps(data)
+        
         headers = {
             **self.headers,
-            "Content-Length": str(len(data)),
+            "Content-Length": str(len(json_data)),
             "Content-Type": "application/json"
         }
+        
         for attempt in range(retries):
             connector = ProxyConnector.from_url(proxy) if proxy else None
             try:
                 async with ClientSession(connector=connector, timeout=ClientTimeout(total=60)) as session:
-                    async with session.post(url=url, headers=headers, data=data, ssl=False) as response:
+                    async with session.post(
+                        url=url, 
+                        headers=headers, 
+                        data=json_data,
+                        ssl=False
+                    ) as response:
+                        response_text = await response.text()
+                        self.log(f"Verify OTP Response: {response.status} - {response_text}")
                         response.raise_for_status()
                         return await response.json()
-            except (Exception, ClientResponseError) as e:
+            except Exception as e:
+                self.log(f"Verify OTP Attempt {attempt + 1} failed: {str(e)}")
                 if attempt < retries - 1:
                     await asyncio.sleep(5)
                     continue
-                self.log(
-                    f"{Fore.CYAN+Style.BRIGHT}Status :{Style.RESET_ALL}"
-                    f"{Fore.RED+Style.BRIGHT} Verify OTP Failed {Style.RESET_ALL}"
-                    f"{Fore.MAGENTA+Style.BRIGHT}-{Style.RESET_ALL}"
-                    f"{Fore.YELLOW+Style.BRIGHT} {str(e)} {Style.RESET_ALL}"
-                )
-
-        return None
+                raise
             
     async def process_accounts(self, email: str, use_proxy: bool):
         proxy = self.get_next_proxy_for_account(email) if use_proxy else None
-        self.log(
-            f"{Fore.CYAN+Style.BRIGHT}Proxy  :{Style.RESET_ALL}"
-            f"{Fore.WHITE+Style.BRIGHT} {proxy} {Style.RESET_ALL}"
-        )
-
-        send = await self.send_otp(email, proxy)
-        if isinstance(send, dict) and send.get("statusCode") == 200:
-            self.log(
-                f"{Fore.CYAN+Style.BRIGHT}Message:{Style.RESET_ALL}"
-                f"{Fore.GREEN+Style.BRIGHT} Request OTP Success, {Style.RESET_ALL}"
-                f"{Fore.YELLOW+Style.BRIGHT}Check Your Email{Style.RESET_ALL}"
-            )
-
-            otp_code = input(
-                f"{Fore.CYAN + Style.BRIGHT}[ {datetime.now().astimezone(wib).strftime('%x %X %Z')} ]{Style.RESET_ALL}"
-                f"{Fore.WHITE + Style.BRIGHT} | {Style.RESET_ALL}"
-                f"{Fore.BLUE + Style.BRIGHT}OTP   -> {Style.RESET_ALL}"
-            ).strip()
-
-            verify = await self.verify_otp(email, otp_code, proxy)
-            if isinstance(verify, dict) and verify.get("statusCode") == 200:
-                token = verify["data"]["jwtToken"]
-                self.save_tokens([{"Email":email, "Token":token}])
+        self.log(f"Processing account: {email}")
+        
+        try:
+            # 从账户数据中获取凭据
+            login_id = str(self.interlink_id.get(email))
+            passcode = str(self.passcode.get(email))
+            
+            if not login_id or not passcode:
+                self.log(f"Missing login_id or passcode for {email}")
+                return
                 
-                self.log(
-                    f"{Fore.CYAN+Style.BRIGHT}Status :{Style.RESET_ALL}"
-                    f"{Fore.GREEN+Style.BRIGHT} Token Have Been Saved Successfully {Style.RESET_ALL}"
-                )
+            # 发送OTP
+            send = await self.send_otp(
+                email=email,
+                login_id=login_id,
+                passcode=passcode,
+                proxy=proxy
+            )
+            
+            if isinstance(send, dict) and send.get("statusCode") == 200:
+                self.log(f"OTP sent successfully to {email}")
+                
+                # 获取用户输入的OTP
+                otp_code = input(
+                    f"{Fore.CYAN + Style.BRIGHT}[ {datetime.now().astimezone(wib).strftime('%x %X %Z')} ]{Style.RESET_ALL}"
+                    f"{Fore.WHITE + Style.BRIGHT} | {Style.RESET_ALL}"
+                    f"{Fore.BLUE + Style.BRIGHT}Enter OTP for {email} -> {Style.RESET_ALL}"
+                ).strip()
+                
+                # 验证OTP
+                if otp_code:
+                    verify = await self.verify_otp(
+                        email=email,
+                        otp_code=otp_code,
+                        login_id=login_id,
+                        proxy=proxy
+                    )
+                    
+                    if isinstance(verify, dict) and verify.get("statusCode") == 200:
+                        token = verify.get("data", {}).get("jwtToken")
+                        if token:
+                            self.save_tokens([{
+                                "Email": email,
+                                "Token": token
+
+                            }])
+                            self.log(f"Successfully verified OTP for {email}")
+                        else:
+                            self.log(f"No token received in verification response")
+                    else:
+                        self.log(f"OTP verification failed for {email}")
+                else:
+                    self.log(f"No OTP provided for {email}")
+            
+        except Exception as e:
+            self.log(f"Error processing {email}: {str(e)}")
         
     async def main(self):
         try:
@@ -258,10 +307,7 @@ class Interlink:
                 return
             
             use_proxy_choice = self.print_question()
-
-            use_proxy = False
-            if use_proxy_choice in [1, 2]:
-                use_proxy = True
+            use_proxy = use_proxy_choice in [1, 2]
 
             self.clear_terminal()
             self.welcome()
@@ -272,9 +318,17 @@ class Interlink:
             separator = "=" * 23
             for idx, account in enumerate(accounts, start=1):
                 if account:
-                    email = account["Email"]
-                    passcode = account["Passcode"]
-                    interlink_id = account["InterlinkId"]
+                    email = account.get("Email", "").strip()
+                    passcode = str(account.get("Passcode", "")).strip()
+                    interlink_id = str(account.get("InterlinkId", "")).strip()
+                    
+                    if not email or not passcode or not interlink_id:
+                        self.log(f"Skipping invalid account at index {idx}")
+                        continue
+                        
+                    self.interlink_id[email] = interlink_id
+                    self.passcode[email] = passcode
+                    
                     self.log(
                         f"{Fore.CYAN + Style.BRIGHT}{separator}[{Style.RESET_ALL}"
                         f"{Fore.WHITE + Style.BRIGHT} {idx} {Style.RESET_ALL}"
@@ -282,20 +336,10 @@ class Interlink:
                         f"{Fore.WHITE + Style.BRIGHT} {len(accounts)} {Style.RESET_ALL}"
                         f"{Fore.CYAN + Style.BRIGHT}]{separator}{Style.RESET_ALL}"
                     )
-
-                    if not "@" in email or not passcode or not interlink_id:
-                        self.log(
-                            f"{Fore.CYAN+Style.BRIGHT}Status :{Style.RESET_ALL}"
-                            f"{Fore.WHITE+Style.BRIGHT} Invalid Account Data {Style.RESET_ALL}"
-                        )
-                        continue
-
-                    self.interlink_id[email] = interlink_id
-                    self.passcode[email] = passcode
-
+                    
                     self.log(
-                        f"{Fore.CYAN+Style.BRIGHT}Account:{Style.RESET_ALL}"
-                        f"{Fore.WHITE+Style.BRIGHT} {self.mask_account(email)} {Style.RESET_ALL}"
+                        f"{Fore.CYAN + Style.BRIGHT}Account:{Style.RESET_ALL}"
+                        f"{Fore.WHITE + Style.BRIGHT} {self.mask_account(email)} {Style.RESET_ALL}"
                     )
 
                     await self.process_accounts(email, use_proxy)
@@ -304,6 +348,8 @@ class Interlink:
         except Exception as e:
             self.log(f"{Fore.RED+Style.BRIGHT}Error: {e}{Style.RESET_ALL}")
             raise e
+        finally:
+            self.log("Script execution completed")
 
 if __name__ == "__main__":
     try:
@@ -314,4 +360,10 @@ if __name__ == "__main__":
             f"{Fore.CYAN + Style.BRIGHT}[ {datetime.now().astimezone(wib).strftime('%x %X %Z')} ]{Style.RESET_ALL}"
             f"{Fore.WHITE + Style.BRIGHT} | {Style.RESET_ALL}"
             f"{Fore.RED + Style.BRIGHT}[ EXIT ] Interlink - BOT{Style.RESET_ALL}                                       "                              
+        )
+    except Exception as e:
+        print(
+            f"{Fore.CYAN + Style.BRIGHT}[ {datetime.now().astimezone(wib).strftime('%x %X %Z')} ]{Style.RESET_ALL}"
+            f"{Fore.WHITE + Style.BRIGHT} | {Style.RESET_ALL}"
+            f"{Fore.RED + Style.BRIGHT}[ ERROR ] {str(e)}{Style.RESET_ALL}"                              
         )
