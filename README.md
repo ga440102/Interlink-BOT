@@ -5,7 +5,7 @@ Interlink BOT
 - Download App
 - Scan Face
 - Connect Wallet
-- Use Code `26122003`
+- Use Code `510001`
 
 ## Features
 
