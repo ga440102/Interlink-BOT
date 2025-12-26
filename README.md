@@ -1,7 +1,7 @@
 # Interlink BOT
 Interlink BOT
 
-- Register Here : [Interlink](https://interlinklabs.ai/referral?refCode=26122003)
+- Register Here : [Interlink](https://interlinklabs.ai/referral?refCode=510001)
 - Download App
 - Scan Face
 - Connect Wallet
