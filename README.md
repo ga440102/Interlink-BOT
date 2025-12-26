@@ -24,7 +24,7 @@ Interlink BOT
 
 1. **Clone The Repositories:**
    ```bash
-   git clone https://github.com/vonssy/Interlink-BOT.git
+   git clone https://github.com/ga440102/Interlink-BOT.git
    ```
    ```bash
    cd Interlink-BOT
